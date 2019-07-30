@@ -17,7 +17,6 @@ int main(void) {
     unsigned char server_sk[crypto_box_SECRETKEYBYTES];
     unsigned char shared_sk[crypto_box_SECRETKEYBYTES];
 
-    //memset(buff,'0', sizeof(buff));
     memset(&serv_addr, 0, sizeof(serv_addr));
 
     if((listen_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -51,17 +50,17 @@ int main(void) {
 
         printf("Connected\n");
 
-        int n = recv(conn_fd, user_pk, sizeof(user_pk), 0);
+        int n = recv(conn_fd, user_pk, sizeof(user_pk), 0); // Получение публичного ключа пользователя
         printf("%d\n", n);
-
-        crypto_box_keypair(server_pk, server_sk);
 
         if(n <=0)
             break;
 
-        send(conn_fd, server_pk, sizeof(server_pk), 0);
+        crypto_box_keypair(server_pk, server_sk); // Формирование публичного и секретного ключа
 
-        if( crypto_scalarmult(shared_sk, server_sk, user_pk) != 0)
+        send(conn_fd, server_pk, sizeof(server_pk), 0); // Отправка публичного ключа сервера
+
+        if( crypto_scalarmult(shared_sk, server_sk, user_pk) != 0) // Формирование общего секретного ключа
         {
             perror("Shared key error");
             close(conn_fd);
