@@ -10,23 +10,30 @@
 #define PORT 5000
 #define MAC_LENGTH 32
 #define SERVER_ADDRESS "127.0.0.1"
+#define MESSAGE_LENGTH 256
 
 int main(void) {
 
     struct sockaddr_in serv_addr, user_addr;
     int listen_fd = 0, conn_fd = 0, key_len = 0;
     socklen_t cli_len = sizeof(struct sockaddr_in);
-    unsigned char   server_payload[4] = {0x00,0x00,0x00,0x01};
-    unsigned char   user_payload[4] = {0x00,0x00,0x00,0x02};
-    unsigned char   ip_buf[16];                        //Length is 16 because maximum IP length with dots is 15 + '\0'
-    unsigned char   ip_payload[9];                     //Length is 9 because 4 digits of IP + 4 digits of payload + '\0'
-    unsigned char*  ip_pay_ptr = ip_payload;
-    unsigned char   MAC_CLIENT[MAC_LENGTH];
-    unsigned char   MAC_SERVER[MAC_LENGTH];
-    unsigned char   user_pk[crypto_box_PUBLICKEYBYTES];
-    unsigned char   server_pk[crypto_box_PUBLICKEYBYTES];
-    unsigned char   server_sk[crypto_box_SECRETKEYBYTES];
-    unsigned char   shared_sk[crypto_box_SECRETKEYBYTES];
+    unsigned char      server_payload[4] = {0x00,0x00,0x00,0x01};
+    unsigned char      user_payload[4] = {0x00,0x00,0x00,0x02};
+    unsigned char      ip_buf[16];                        //Length is 16 because maximum IP length with dots is 15 + '\0'
+    unsigned char      ip_payload[9];                     //Length is 9 because 4 digits of IP + 4 digits of payload + '\0'
+    unsigned char*     ip_pay_ptr;
+    unsigned char      MAC_CLIENT[MAC_LENGTH];
+    unsigned char      MAC_SERVER[MAC_LENGTH];
+    unsigned char      user_pk[crypto_box_PUBLICKEYBYTES];
+    unsigned char      server_pk[crypto_box_PUBLICKEYBYTES];
+    unsigned char      server_sk[crypto_box_SECRETKEYBYTES];
+    unsigned char      shared_sk[crypto_box_SECRETKEYBYTES];
+    unsigned char      nonce[crypto_aead_xchacha20poly1305_ietf_NPUBBYTES];
+    unsigned char      decrypted_msg[MESSAGE_LENGTH];
+    unsigned long long decrypted_len;
+    unsigned char      cipher_msg[MESSAGE_LENGTH + crypto_aead_xchacha20poly1305_ietf_ABYTES];
+    unsigned long long cipher_len = MESSAGE_LENGTH + crypto_aead_xchacha20poly1305_ietf_ABYTES;
+
 
     memset(&serv_addr, 0, sizeof(serv_addr));
     memset(&user_addr, 0, sizeof(user_addr));
@@ -106,6 +113,7 @@ int main(void) {
 
         recv(conn_fd, MAC_CLIENT, sizeof(MAC_CLIENT), 0);
 
+        ip_pay_ptr = ip_payload;
         char* delim_ptr = strtok(ip_buf, ".");  //Getting server IP byte sequence
         while (delim_ptr != NULL)
         {
@@ -142,10 +150,41 @@ int main(void) {
 
         crypto_auth_hmacsha256(MAC_SERVER, ip_payload, sizeof(ip_payload), shared_sk);
 
-        send(conn_fd, MAC_SERVER, sizeof(MAC_SERVER), 0);
+        if((send(conn_fd, MAC_SERVER, sizeof(MAC_SERVER), 0) < 0))
+        {
+            perror("Couldn't send MAC_SERVER\n");
+            close(conn_fd);
+            close(listen_fd);
+            return -1;
+        }
+
+        randombytes_buf_deterministic(nonce, sizeof(nonce), MAC_SERVER);
+
+        while((recv(conn_fd, cipher_msg, sizeof(cipher_msg), 0)) > 0)
+        {
+            if ((crypto_aead_xchacha20poly1305_ietf_decrypt(decrypted_msg, &decrypted_len, NULL,
+                                                            cipher_msg, cipher_len,
+                                                            NULL, 0, nonce, shared_sk)) < 0)
+            {
+                perror("Decryption failed\n");
+                close(conn_fd);
+                close(listen_fd);
+                return -1;
+            }
+            else
+            {
+                printf("%s", decrypted_msg);
+            }
+        }
 
         close(conn_fd);
     }
+
+    memset(&user_addr, 0, sizeof(user_addr));
+    memset(&ip_buf, 0, sizeof(ip_buf));
+    memset(&MAC_CLIENT, 0, sizeof(MAC_CLIENT));
+    memset(&MAC_SERVER, 0, sizeof(MAC_SERVER));
+    memset(&ip_payload, 0 , sizeof(ip_payload));
 
     close(conn_fd);
     close(listen_fd);
