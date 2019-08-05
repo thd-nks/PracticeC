@@ -11,7 +11,6 @@
 #define SERVER_ADDRESS "127.0.0.1"
 #define MAC_LENGTH 32
 #define MESSAGE_LENGTH 256
-#define FILE_NAME "tst.txt"
 #define TRUE 1
 #define FALSE 0
 
@@ -21,7 +20,7 @@ void log_message(FILE *log_file, char *msg, int bool_error)
         printf("%s\n", msg);
     else
     {
-        fprintf(log_file, "%s", msg);
+        fprintf(log_file, "%s\n", msg);
         if(bool_error)
             fclose(log_file);
     }
@@ -30,9 +29,9 @@ void log_message(FILE *log_file, char *msg, int bool_error)
 int main(int argc, char* argv[])
 {
 
-    if( argc < 2 || argc > 3 )
+    if( argc < 3 || argc > 4 )
     {
-        printf("Usage: ./Client <parameter>\n"
+        printf("Usage: ./Client <message_file_name> <parameter>\n"
                "-c Console logging\n"
                "-f <log_file_name> File logging\n");
         return -1;
@@ -46,22 +45,30 @@ int main(int argc, char* argv[])
     }
 
     FILE* log_file = NULL;
+    FILE* read_fp = NULL;
 
-    if ( (strcmp(argv[1], "-f") == 0) && (argc == 3))
+    if ( (strcmp(argv[2], "-f") == 0) && (argc == 4))
     {
-        if ( (log_file = fopen(argv[2], "w")) == NULL)
+        if ( (log_file = fopen(argv[3], "w")) == NULL)
         {
             perror("Couldn't create file\n");
             return -1;
         }
     }
-    else if( (strcmp(argv[1], "-c") != 0) || (argc != 2))
+    else if( (strcmp(argv[2], "-c") != 0) || (argc != 3))
     {
         printf("Wrong parameters. Check usage with ./Client\n");
         return -1;
     }
 
-    FILE* read_fp;
+    if((read_fp = fopen(argv[1],"r")) == NULL)
+    {
+        char* error = "Couldn't open file";
+        log_message(log_file, error, TRUE);
+        return -1;
+    }
+
+
     struct sockaddr_in serv_addr, user_addr;
     int user_fd = 0;
     unsigned int       len = sizeof(struct sockaddr);
@@ -217,14 +224,6 @@ int main(int argc, char* argv[])
     }
 
     log_message(log_file, "Verification successful", FALSE);
-
-    if((read_fp = fopen(FILE_NAME,"r")) == NULL)
-    {
-        char* error = "Couldn't open file";
-        log_message(log_file, error, TRUE);
-        close(user_fd);
-        return -1;
-    }
 
     log_message(log_file, "File opened", FALSE);
 

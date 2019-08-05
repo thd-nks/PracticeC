@@ -20,7 +20,7 @@ void log_message(FILE *log_file, char *msg, int bool_error)
         printf("%s\n", msg);
     else
     {
-        fprintf(log_file, "%s", msg);
+        fprintf(log_file, "%s\n", msg);
         if(bool_error)
             fclose(log_file);
     }
