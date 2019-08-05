@@ -6,8 +6,8 @@ Small client-server application, implementing several encryption algorythms for 
 Each folder contains CMakeLists file for building and the application code.
 
 Building the project:
-Open a folder in terminal, then execute:
-* cmake CMakeLists.txt
-* make
+* Open a folder in terminal, then execute:
+  * cmake CMakeLists.txt
+  * make
 
 You should get Client/Server executable.
