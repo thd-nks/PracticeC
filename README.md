@@ -1,7 +1,7 @@
 # Encrypted message exchange
 Small client-server application, implementing several encryption algorythms for authentication and encrypted message exchange written in C.
 
-#REQUIRES Libsodium 
+# REQUIRES Libsodium 
 
 Each folder contains CMakeLists file for building and the application code.
 
