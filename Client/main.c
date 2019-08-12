@@ -6,16 +6,15 @@
 #include <zconf.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #define SERVER_PORT 5000
 #define SERVER_ADDRESS "127.0.0.1"
 #define MAC_LENGTH 32
 #define MESSAGE_LENGTH 256
-#define TRUE 1
-#define FALSE 0
 
 enum Errors{
-    SENDING_ERROR = -11,
+    SENDING_ERROR = -12,
     RECEIVING_ERROR,
     FILE_ERROR,
     SOCKET_ERROR,
@@ -25,27 +24,30 @@ enum Errors{
     SHARED_KEY_ERROR,
     VERIFICATION_ERROR,
     ARGS_ERROR,
-    SODIUM_ERROR
+    SODIUM_ERROR,
+    RESPONSE_ERROR
 };
 
-void log_message_str(FILE* log_file, char *msg, int bool_error)
+void log_message_str(FILE** log_file, char *msg)
 {
-    if(!log_file)
+    if(!(*log_file))
         printf("%s\n", msg);
     else
-        fprintf(log_file, "%s\n", msg);
+        fprintf(*log_file, "%s\n", msg);
 }
 
-void log_message(FILE* log_file, int* msg, int bool_error)
+void log_message_hex(FILE** log_file, const int* msg)
 {
-    if(!log_file)
+    if(!(*log_file))
         printf("%X\n", *msg);
     else
-        fprintf(log_file, "%X\n", *msg);
+        fprintf(*log_file, "%X\n", *msg);
 }
 
 int initiate(const int* argc, char** argv[], FILE** log_file, FILE** read_fp)
 {
+    char* error;
+    errno = 0;
     if(sodium_init() < 0)
     {
         perror("No sodium\n");
@@ -76,8 +78,9 @@ int initiate(const int* argc, char** argv[], FILE** log_file, FILE** read_fp)
 
     if((*read_fp = fopen((*argv)[1],"r")) == NULL)
     {
-        char* error = "Couldn't open file";
-        log_message(*log_file, error, TRUE);
+        error = "Couldn't open file";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return FILE_ERROR;
     }
 
@@ -87,19 +90,23 @@ int initiate(const int* argc, char** argv[], FILE** log_file, FILE** read_fp)
 
 int server_connect(int* user_fd, FILE** log_file, struct sockaddr_in* serv_addr)
 {
+    char* error;
+    errno = 0;
     if((*user_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        char* error = "Error while creating socket";
-        log_message_str(*log_file, error, TRUE);
+        error = "Error while creating socket";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return SOCKET_ERROR;
     }
 
-    log_message_str(*log_file, "Socket created", FALSE);
+    log_message_str(log_file, "Socket created");
 
     if((inet_pton(AF_INET, SERVER_ADDRESS, &serv_addr->sin_addr)) <= 0)
     {
-        char* error = "Server address error";
-        log_message_str(*log_file, error, TRUE);
+        error = "Server address error";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return ADDRESS_ERROR;
     }
     serv_addr->sin_family = AF_INET;
@@ -107,61 +114,92 @@ int server_connect(int* user_fd, FILE** log_file, struct sockaddr_in* serv_addr)
 
     if((connect(*user_fd, (struct sockaddr*)serv_addr, sizeof(*serv_addr))) < 0)
     {
-        char* error = "Error while connecting";
-        log_message_str(*log_file, error, TRUE);
+        error = "Error while connecting";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return CONNECT_ERROR;
     }
 
-    log_message_str(*log_file, "Connected to server", FALSE);
+    log_message_str(log_file, "Connected to server");
 
     return 0;
 }
 
 int key_exchange(const int* user_fd, FILE** log_file, unsigned char* shared_sk, int shared_sk_len)
 {
-
+    errno = 0;
     unsigned char      user_pk[crypto_box_PUBLICKEYBYTES];
     unsigned char      user_sk[crypto_box_SECRETKEYBYTES];
     unsigned char      server_pk[crypto_box_PUBLICKEYBYTES];
     int                key_len = 0;
+    char*              error;
 
     crypto_box_keypair(user_pk, user_sk); // Forming public/secret key pair
 
     if((send(*user_fd, user_pk, crypto_box_PUBLICKEYBYTES, 0)) < 0) // Sending user public key
     {
-        char* error = "Couldn't send server public key\n";
-        log_message_str(*log_file, error, TRUE);
+        error = "Couldn't send server public key\n";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return SENDING_ERROR;
     }
 
-    log_message_str(*log_file, "Send user public key:", FALSE);
-    log_message(*log_file, user_pk, FALSE);
+    log_message_str(log_file, "Send user public key:");
+    log_message_hex(log_file, (const int*)user_pk);
+
     if( (key_len = recv(*user_fd, server_pk, shared_sk_len, 0)) <= 0) // Receiving server public key
     {
-        char* error = "Error receiving public key";
-        log_message_str(*log_file, error, TRUE);
+        error = "Error receiving public key";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return RECEIVING_ERROR;
     }
 
     if(key_len != crypto_box_PUBLICKEYBYTES)
     {
-        char* error = "Key wrong length";
-        log_message_str(*log_file, error, TRUE);
+        error = "Key wrong length";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return KEY_LENGTH_ERROR;
     }
 
-    log_message_str(*log_file, "Received server public key:", FALSE);
-    log_message(*log_file, (int*)server_pk, FALSE);
+    log_message_str(log_file, "Received server public key:");
+    log_message_hex(log_file, (const int*)server_pk);
 
     if(crypto_scalarmult(shared_sk, user_sk, server_pk) != 0) // Making shared secret key
     {
-        char* error = "Shared key calculation error";
-        log_message(*log_file, error, TRUE);
+        error = "Shared key calculation error";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return SHARED_KEY_ERROR;
     }
 
-    log_message_str(*log_file, "Calculated shared secret key:", FALSE);
-    log_message(*log_file, shared_sk, FALSE);
+    log_message_str(log_file, "Calculated shared secret key:");
+    log_message_hex(log_file, (const int*)shared_sk);
+
+    return 0;
+}
+
+void concat_ip_payload(char* ip_payload, char* ip_buf, char* payload, int payload_len)
+{
+    int count = 0;
+
+    char* delim_ptr = strtok(ip_buf, ".");  //Getting IP byte sequence
+    while (delim_ptr != NULL)
+    {
+        *(ip_payload + count++) = atoi(delim_ptr);
+        delim_ptr = strtok(NULL, ".");
+    }
+
+    memcpy(ip_payload+count, payload, payload_len); //Concatenate IP and payload
+}
+
+int send_response(const int* user_fd, char* response, int response_len)
+{
+    if((send(*user_fd, response, response_len, 0)) < 0) //Send response to server
+    {
+        return SENDING_ERROR;
+    }
 
     return 0;
 }
@@ -176,73 +214,101 @@ int shared_key_verify(const int* user_fd, FILE** log_file, unsigned char* shared
     unsigned char      MAC_SERVER[MAC_LENGTH];
     unsigned char      server_payload[4] = {0x00,0x00,0x00,0x01};
     unsigned char      user_payload[4] = {0x00,0x00,0x00,0x02};
-    int                count = 0;
+    char               response[8];
+    char               response_success[] = "Success";
+    char               response_failed[] = "Failed";
+    char*              error;
+    int                error_num;
 
+    errno = 0;
     memset(&ip_buf, 0, sizeof(ip_buf));
+    memset(&response, 0, sizeof(response));
     memset(&ip_payload, 0, sizeof(ip_payload));
     memset(&MAC_CLIENT, 0, sizeof(MAC_CLIENT));
     memset(&MAC_SERVER, 0, sizeof(MAC_SERVER));
 
     memcpy(ip_buf, SERVER_ADDRESS, sizeof(SERVER_ADDRESS));
 
-    char* delim_ptr = strtok(ip_buf, ".");  //Getting server IP byte sequence
-    while (delim_ptr != NULL)
-    {
-        *(ip_payload + count++) = atoi(delim_ptr);
-        delim_ptr = strtok(NULL, ".");
-    }
-
-    memcpy(ip_payload+count, server_payload, sizeof(server_payload)); //Concatenate user ip and server_payload
+    concat_ip_payload((char*)ip_payload, (char*)ip_buf, (char*)server_payload, sizeof(server_payload));
 
     crypto_auth_hmacsha256(MAC_CLIENT, ip_payload, sizeof(ip_payload), shared_sk);
 
     if((send(*user_fd, MAC_CLIENT, sizeof(MAC_CLIENT), 0)) < 0) //Sending MAC_CLIENT
     {
-        char* error = "Couldn't send MAC_CLIENT";
-        log_message_str(*log_file, error, TRUE);
+        error = "Couldn't send MAC_CLIENT";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return SENDING_ERROR;
     }
 
-    log_message_str(*log_file, "Send MAC_CLIENT:", FALSE);
-    log_message(*log_file, MAC_CLIENT, FALSE);
+    log_message_str(log_file, "Send MAC_CLIENT:");
+    log_message_hex(log_file, (const int*)MAC_CLIENT);
 
-    if((recv(*user_fd, MAC_SERVER, sizeof(MAC_SERVER), 0)) < 0) //Receiving MAC_SERVER
+    if((recv(*user_fd, response, sizeof(response), 0)) < 0) //Get response from server
     {
-        char* error = "Couldn't receive MAC_SERVER";
-        log_message_str(*log_file, error, TRUE);
+        error = "Couldn't receive response";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
         return RECEIVING_ERROR;
     }
 
-    log_message_str(*log_file, "Received MAC_SERVER:", FALSE);
-    log_message(*log_file, MAC_SERVER, FALSE);
+    if(strcmp(response, response_success) == 0)
+        log_message_str(log_file, response);
+    else if(strcmp(response, response_failed) == 0)
+    {
+        log_message_str(log_file, response);
+        return RESPONSE_ERROR;
+    }
+    else
+    {
+        error = "Unknown response";
+        log_message_str(log_file, error);
+        return RESPONSE_ERROR;
+    }
 
-    memset(&ip_buf, 0, sizeof(ip_buf));
+    if((recv(*user_fd, MAC_SERVER, sizeof(MAC_SERVER), 0)) < 0) //Receiving MAC_SERVER
+    {
+        error = "Couldn't receive MAC_SERVER";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
+        return RECEIVING_ERROR;
+    }
+
+    log_message_str(log_file, "Received MAC_SERVER:");
+    log_message_hex(log_file, (const int*)MAC_SERVER);
+
     memset(&ip_payload, 0 , sizeof(ip_payload));
 
     getsockname(*user_fd, (struct sockaddr*)&user_addr, &len); //Get user IP
 
     inet_ntop(AF_INET, &user_addr.sin_addr, (char*)ip_buf, sizeof(ip_buf)); //Get dotted-decimal format of user IP
 
-    delim_ptr = strtok(ip_buf, ".");  //Getting user IP byte sequence
-    count = 0;
-    while (delim_ptr != NULL)
-    {
-        *(ip_payload + count++) = atoi(delim_ptr);
-        delim_ptr = strtok(NULL, ".");
-    }
-
-    memcpy(ip_payload+count, user_payload, sizeof(user_payload)); //Concatenate user ip and user_payload
+    concat_ip_payload((char*)ip_payload, (char*)ip_buf, (char*)user_payload, sizeof(server_payload));
 
     if ((crypto_auth_hmacsha256_verify(MAC_SERVER, ip_payload, sizeof(ip_payload), shared_sk)) < 0)
     {
-        char* error = "Verification error";
-        log_message_str(*log_file, error, TRUE);
+        error = "Verification error";
+        log_message_str(log_file, error);
+        if((error_num = send_response(user_fd, response_failed, sizeof(response_failed))) < 0)
+        {
+            error = "Couldn't send response";
+            log_message_str(log_file, error);
+            log_message_str(log_file, strerror(errno));
+            return error_num;
+        }
         return VERIFICATION_ERROR;
     }
 
-    log_message_str(*log_file, "Verification successful", FALSE);
+    if((error_num = send_response(user_fd, response_success, sizeof(response_success))) < 0)
+    {
+        error = "Couldn't send response";
+        log_message_str(log_file, error);
+        log_message_str(log_file, strerror(errno));
+        return error_num;
+    }
 
-    log_message_str(*log_file, "File opened", FALSE);
+    log_message_str(log_file, "Verification successful");
+    log_message_str(log_file, "File opened");
 
     return 0;
 
@@ -254,10 +320,11 @@ int send_message(const int* user_fd, FILE** log_file, FILE** read_file, unsigned
     unsigned char      nonce[crypto_aead_xchacha20poly1305_ietf_NPUBBYTES];
     unsigned long long cipher_len;
     unsigned char      message_buf[MESSAGE_LENGTH];
+    char*              error;
 
     memset(&message_buf, 0, sizeof(message_buf));
 
-    int las_pos = 0;
+    long las_pos = 0;
 
     while(!feof(*read_file))
     {
@@ -274,15 +341,16 @@ int send_message(const int* user_fd, FILE** log_file, FILE** read_file, unsigned
 
             if((send(*user_fd, cipher_msg, cipher_len, 0)) < 0)
             {
-                char* error = "Couldn't send message";
-                log_message_str(*log_file, error, TRUE);
+                error = "Couldn't send message";
+                log_message_str(log_file, error);
+                log_message_str(log_file, strerror(errno));
                 return SENDING_ERROR;
             }
             las_pos = ftell(*read_file);
         }
     }
 
-    log_message_str(*log_file, "Message send", FALSE);
+    log_message_str(log_file, "Message send");
 
     return 0;
 }
@@ -310,7 +378,6 @@ int main(int argc, char* argv[])
 
     if (( error = initiate(&argc, &argv, &log_file, &read_file)) < 0)
     {
-        perror("Init error\n");
         close_all(&user_fd, &log_file, &read_file);
         return error;
     }
