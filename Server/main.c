@@ -429,6 +429,8 @@ int main(int argc, char* argv[])
             close_all(&log_file, &listen_fd, &conn_fd);
             return error;
         }
+        
+        close(conn_fd);
     }
 
 }
