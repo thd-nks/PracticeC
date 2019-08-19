@@ -3,7 +3,7 @@ Small client-server application, implementing several encryption algorythms for 
 
 **REQUIRES Libsodium**
 
-Each folder contains CMakeLists file for building and the application code.
+Client and Server folders contain CMakeLists file for building and the application code. Utilities folder contains shared data and functions.
 
 Building the project:
 * Open a folder in terminal, then execute:
