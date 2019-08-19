@@ -537,8 +537,6 @@ int main(int argc, char* argv[])
                 }
             }
         }
-        
-        close(conn_fd);
     }
     close_all(&log_file, &listen_fd, NULL);
 }
