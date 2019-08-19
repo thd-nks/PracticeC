@@ -8,6 +8,6 @@ if(NOT SOD_LIB)
     message(FATAL_ERROR "libsodium library not found")
 endif()
 
-add_executable(Client main.c)
+add_executable(Client main.c ../Utilities/utilities.c)
 
 target_link_libraries(Client libsodium.a)

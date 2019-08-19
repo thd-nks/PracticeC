@@ -3,11 +3,11 @@ project(Server C)
 
 set(CMAKE_C_STANDARD 99)
 
-add_executable(Server main.c)
+add_executable(Server main.c ../Utilities/utilities.c)
 
 find_library(SOD_LIB libsodium.a)
-if(NOT SOD_LIB)
+if (NOT SOD_LIB)
     message(FATAL_ERROR "libsodium library not found")
-endif()
+endif ()
 
 target_link_libraries(Server libsodium.a)
